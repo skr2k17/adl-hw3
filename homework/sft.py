@@ -29,7 +29,7 @@ def tokenize(tokenizer, question: str, answer: str):
 
     tokenizer.padding_side = "right"
     tokenizer.pad_token = tokenizer.eos_token
-    full = tokenizer(full_text, padding="max_length", truncation=True, max_length=128)
+    full = tokenizer(full_text, padding="max_length", truncation=True, max_length=256)
 
     input_ids = full["input_ids"]
     question_len = len(tokenizer(question)["input_ids"])
@@ -97,8 +97,8 @@ def train_model(
     llm.model.enable_input_require_grads()
 
     lora_config = LoraConfig(
-        r=kwargs.pop("r", 8),
-        lora_alpha=kwargs.pop("lora_alpha", 32),
+        r=kwargs.pop("r", 16),
+        lora_alpha=kwargs.pop("lora_alpha", 48),
         target_modules=kwargs.pop("target_modules", "all-linear"),
         bias=kwargs.pop("bias", "none"),
         task_type=kwargs.pop("task_type", "CAUSAL_LM"),
@@ -109,10 +109,10 @@ def train_model(
     dataset = Dataset(dataset_name)
     train_dataset = TokenizedDataset(llm.tokenizer, dataset, format_example)
 
-    num_train_epochs = kwargs.pop("num_train_epochs", 4)
-    per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 8)
-    learning_rate = kwargs.pop("learning_rate", 5e-5)
-    gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 2)
+    num_train_epochs = kwargs.pop("num_train_epochs", 5)
+    per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 4)
+    learning_rate = kwargs.pop("learning_rate", 2e-5)
+    gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 4)
 
     training_args = TrainingArguments(
         output_dir=str(output_path),
