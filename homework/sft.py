@@ -8,7 +8,7 @@ def load() -> BaseLLM:
     from peft import PeftModel
 
     model_name = "sft_model"
-    model_path = Path(__file__).parent / model_name
+    model_path = str(Path(__file__).parent / model_name)
 
     llm = BaseLLM()
     llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
@@ -97,8 +97,8 @@ def train_model(
     llm.model.enable_input_require_grads()
 
     lora_config = LoraConfig(
-        r=kwargs.pop("r", 8),
-        lora_alpha=kwargs.pop("lora_alpha", 32),
+        r=kwargs.pop("r", 4),
+        lora_alpha=kwargs.pop("lora_alpha", 16),
         target_modules=kwargs.pop("target_modules", "all-linear"),
         bias=kwargs.pop("bias", "none"),
         task_type=kwargs.pop("task_type", "CAUSAL_LM"),
@@ -121,9 +121,10 @@ def train_model(
         gradient_checkpointing=True,
         learning_rate=learning_rate,
         num_train_epochs=num_train_epochs,
-        save_strategy="epoch",
+        save_strategy="no",
         logging_strategy="steps",
         remove_unused_columns=False,
+        save_total_limit=1,
         bf16=llm.device == "cuda",
         **kwargs,
     )
