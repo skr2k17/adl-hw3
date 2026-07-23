@@ -45,11 +45,16 @@ def tokenize(tokenizer, question: str, answer: str):
     return full
 
 
-def format_example(prompt: str, answer: str) -> dict[str, str]:
+def format_example(prompt: str, answer: str, reasoning: str | None = None) -> dict[str, str]:
     """
     Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
     """
-    raise NotImplementedError()
+    if reasoning is not None:
+        answer_text = reasoning
+    else:
+        answer_text = f"<answer>{float(answer):.6g}</answer>"
+
+    return {"question": prompt, "answer": answer_text}
 
 
 class TokenizedDataset:
@@ -70,16 +75,64 @@ class TokenizedDataset:
         return len(self.data)
 
     def __getitem__(self, idx):
-        formated_data = self.format_fn(*self.data[idx])
-        return tokenize(self.tokenizer, **formated_data)
+        formatted_data = self.format_fn(*self.data[idx])
+        return tokenize(self.tokenizer, **formatted_data)
 
 
 def train_model(
     output_dir: str,
+    dataset_name: str = "train",
     **kwargs,
 ):
-    raise NotImplementedError()
-    test_model(output_dir)
+    from pathlib import Path
+
+    from peft import LoraConfig, get_peft_model
+    from transformers import Trainer, TrainingArguments
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    llm = BaseLLM()
+    llm.model.train()
+    llm.model.enable_input_require_grads()
+
+    lora_config = LoraConfig(
+        r=kwargs.pop("r", 8),
+        lora_alpha=kwargs.pop("lora_alpha", 32),
+        target_modules=kwargs.pop("target_modules", "all-linear"),
+        bias=kwargs.pop("bias", "none"),
+        task_type=kwargs.pop("task_type", "CAUSAL_LM"),
+    )
+    llm.model = get_peft_model(llm.model, lora_config)
+    llm.model.config.use_cache = False
+
+    dataset = Dataset(dataset_name)
+    train_dataset = TokenizedDataset(llm.tokenizer, dataset, format_example)
+
+    num_train_epochs = kwargs.pop("num_train_epochs", 2)
+    per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 32)
+    learning_rate = kwargs.pop("learning_rate", 2e-4)
+
+    training_args = TrainingArguments(
+        output_dir=str(output_path),
+        logging_dir=str(output_path),
+        report_to="tensorboard",
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_checkpointing=True,
+        learning_rate=learning_rate,
+        num_train_epochs=num_train_epochs,
+        save_strategy="epoch",
+        logging_strategy="steps",
+        remove_unused_columns=False,
+        bf16=llm.device == "cuda",
+        **kwargs,
+    )
+
+    trainer = Trainer(model=llm.model, args=training_args, train_dataset=train_dataset)
+    trainer.train()
+    trainer.save_model(str(output_path))
+
+    test_model(str(output_path))
 
 
 def test_model(ckpt_path: str):

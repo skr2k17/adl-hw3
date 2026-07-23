@@ -1,17 +1,51 @@
+import os
+from pathlib import Path
 from typing import overload
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-checkpoint = "HuggingFaceTB/SmolLM2-360M-Instruct"
 
+def _resolve_checkpoint() -> str:
+    env_checkpoint = os.environ.get("SMOLLM2_CHECKPOINT")
+    if env_checkpoint:
+        return env_checkpoint
+
+    local_candidates = [
+        Path("/content") / "SmolLM2-360M-Instruct",
+        Path.home() / "models" / "SmolLM2-360M-Instruct",
+    ]
+    for candidate in local_candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return "HuggingFaceTB/SmolLM2-360M-Instruct"
+
+
+checkpoint = _resolve_checkpoint()
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 
 class BaseLLM:
     def __init__(self, checkpoint=checkpoint):
-        self.tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-        self.model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
+        local_only = not str(checkpoint).startswith("HuggingFaceTB/")
+        self.tokenizer = AutoTokenizer.from_pretrained(checkpoint, local_files_only=local_only)
+
+        if device == "cuda":
+            torch_dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+            self.model = AutoModelForCausalLM.from_pretrained(
+                checkpoint,
+                local_files_only=local_only,
+                torch_dtype=torch_dtype,
+                device_map="auto",
+                low_cpu_mem_usage=True,
+            )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                checkpoint,
+                local_files_only=local_only,
+            ).to(device)
+
         self.device = device
 
     def format_prompt(self, question: str) -> str:
@@ -105,7 +139,40 @@ class BaseLLM:
                 for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
             ]
 
-        raise NotImplementedError()
+        self.tokenizer.padding_side = "left"
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        encoded = self.tokenizer(list(prompts), padding=True, return_tensors="pt")
+        input_ids = encoded["input_ids"].to(self.device)
+        attention_mask = encoded["attention_mask"].to(self.device)
+
+        full_input_len = input_ids.size(1)
+        num_sequences = 1 if num_return_sequences is None else num_return_sequences
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=50,
+                eos_token_id=self.tokenizer.eos_token_id,
+                do_sample=temperature > 0,
+                temperature=temperature if temperature > 0 else None,
+                num_return_sequences=num_sequences,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+
+        decoded: list[str] = []
+        for sample_idx in range(len(prompts)):
+            sample_start = sample_idx * num_sequences
+            for seq_idx in range(num_sequences):
+                sample_output = outputs[sample_start + seq_idx]
+                generated_tokens = sample_output[full_input_len:]
+                decoded.append(self.tokenizer.decode(generated_tokens, skip_special_tokens=True))
+
+        if num_return_sequences is None:
+            return decoded
+
+        return [decoded[i : i + num_return_sequences] for i in range(0, len(decoded), num_return_sequences)]
 
     def answer(self, *questions) -> list[float]:
         """

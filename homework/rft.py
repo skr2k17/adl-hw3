@@ -21,8 +21,9 @@ def train_model(
     output_dir: str,
     **kwargs,
 ):
-    # Reuse much of the SFT code here
-    raise NotImplementedError()
+    from .sft import train_model as sft_train_model
+
+    return sft_train_model(output_dir=output_dir, dataset_name="train", **kwargs)
 
 
 if __name__ == "__main__":
