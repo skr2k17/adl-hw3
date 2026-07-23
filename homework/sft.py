@@ -80,7 +80,7 @@ class TokenizedDataset:
 
 
 def train_model(
-    output_dir: str,
+    output_dir: str = "homework/sft_model",
     dataset_name: str = "train",
     **kwargs,
 ):
@@ -97,8 +97,8 @@ def train_model(
     llm.model.enable_input_require_grads()
 
     lora_config = LoraConfig(
-        r=kwargs.pop("r", 4),
-        lora_alpha=kwargs.pop("lora_alpha", 16),
+        r=kwargs.pop("r", 8),
+        lora_alpha=kwargs.pop("lora_alpha", 32),
         target_modules=kwargs.pop("target_modules", "all-linear"),
         bias=kwargs.pop("bias", "none"),
         task_type=kwargs.pop("task_type", "CAUSAL_LM"),
@@ -109,18 +109,23 @@ def train_model(
     dataset = Dataset(dataset_name)
     train_dataset = TokenizedDataset(llm.tokenizer, dataset, format_example)
 
-    num_train_epochs = kwargs.pop("num_train_epochs", 2)
-    per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 32)
-    learning_rate = kwargs.pop("learning_rate", 2e-4)
+    num_train_epochs = kwargs.pop("num_train_epochs", 4)
+    per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 8)
+    learning_rate = kwargs.pop("learning_rate", 5e-5)
+    gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 2)
 
     training_args = TrainingArguments(
         output_dir=str(output_path),
         logging_dir=str(output_path),
         report_to="tensorboard",
         per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=True,
         learning_rate=learning_rate,
         num_train_epochs=num_train_epochs,
+        lr_scheduler_type="cosine",
+        warmup_ratio=0.05,
+        weight_decay=0.01,
         save_strategy="no",
         logging_strategy="steps",
         remove_unused_columns=False,

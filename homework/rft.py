@@ -8,7 +8,7 @@ def load() -> BaseLLM:
     from peft import PeftModel
 
     model_name = "rft_model"
-    model_path = Path(__file__).parent / model_name
+    model_path = str(Path(__file__).parent / model_name)
 
     llm = BaseLLM()
     llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
