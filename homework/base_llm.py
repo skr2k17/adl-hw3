@@ -47,6 +47,9 @@ class BaseLLM:
             ).to(device)
 
         self.device = device
+        # Generation budget. Plain <answer> completions need very few tokens; chain-of-thought
+        # answers (CoT / RFT) need room to finish the reasoning before the </answer> tag.
+        self.max_new_tokens = 50
 
     def format_prompt(self, question: str) -> str:
         """
@@ -129,7 +132,7 @@ class BaseLLM:
         # Preventing OOM
         # Depending on your GPU batched generation will use a lot of memory.
         # If you run out of memory, try to reduce the micro_batch_size.
-        micro_batch_size = 32
+        micro_batch_size = max(1, 32 // max(1, num_return_sequences or 1))
         if len(prompts) > micro_batch_size:
             return [
                 r
@@ -153,7 +156,7 @@ class BaseLLM:
             outputs = self.model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=50,
+                max_new_tokens=self.max_new_tokens,
                 eos_token_id=self.tokenizer.eos_token_id,
                 do_sample=temperature > 0,
                 temperature=temperature if temperature > 0 else None,

@@ -11,22 +11,22 @@ class CoTModel(BaseLLM):
             {
                 "role": "system",
                 "content": (
-                    "You are a careful unit-conversion assistant. Think briefly, use the unit relationship "
-                    "explicitly, and answer with the exact format <answer>number</answer>."
+                    "You convert units. Be concise: state the conversion factor, show one "
+                    "multiplication, and end with <answer>number</answer>. "
+                    "Use 1 year = 365.2422 days, 1 month = 30.4368 days, and decimal byte "
+                    "prefixes (1 KB = 1000 B, 1 B = 8 bit)."
                 ),
             },
-            {
-                "role": "user",
-                "content": "How many gram are there per 6 kg?",
-            },
+            {"role": "user", "content": "How many gram are there per 6 kg?"},
+            {"role": "assistant", "content": "1 kg = 1000 g. 6 * 1000 = <answer>6000</answer>"},
+            {"role": "user", "content": "Express 4 centuries as a quantity of week."},
             {
                 "role": "assistant",
-                "content": "1 kg = 1000 grams. 6 * 1000 = <answer>6000</answer>",
+                "content": "1 century = 5217.7457 weeks. 4 * 5217.7457 = <answer>20870.983</answer>",
             },
-            {
-                "role": "user",
-                "content": question,
-            },
+            {"role": "user", "content": "Could you provide the value of 2 pound in ounce?"},
+            {"role": "assistant", "content": "1 pound = 16 ounce. 2 * 16 = <answer>32</answer>"},
+            {"role": "user", "content": question},
         ]
         return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
