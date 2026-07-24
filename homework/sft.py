@@ -7,7 +7,7 @@ from .data import Dataset, benchmark
 QUANTITY_RE = re.compile(r"(?<![*^\d.])\b(\d+(?:\.\d+)?)\b")
 
 
-def augment_dataset(data, values=range(1, 11), samples_per_combo: int = 4, seed: int = 0):
+def augment_dataset(data, values=range(1, 11), samples_per_combo: int = 3, seed: int = 0):
 
     import random
     from collections import defaultdict
@@ -67,8 +67,7 @@ def tokenize(tokenizer, question: str, answer: str, max_length: int = 128):
 
     input_ids = full["input_ids"]
     question_len = len(tokenizer(question)["input_ids"])
-
-    # Create labels: mask out the prompt part
+    
     labels = [-100] * question_len + input_ids[question_len:]
 
     for i in range(len(labels)):
@@ -162,11 +161,10 @@ def train_model(
         dataset.data = augment_dataset(dataset.data, samples_per_combo=samples_per_combo)
         print(f"[sft] augmented training set: {len(dataset.data)} examples")
 
-    # Plain <answer>...</answer> targets are ~25 tokens; RFT reasoning targets need the full budget.
     max_length = kwargs.pop("max_length", 128 if dataset_name != "train" else 64)
     train_dataset = TokenizedDataset(llm.tokenizer, dataset, format_example, max_length=max_length)
 
-    num_train_epochs = kwargs.pop("num_train_epochs", 8)
+    num_train_epochs = kwargs.pop("num_train_epochs", 5)
     per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 32)
     learning_rate = kwargs.pop("learning_rate", 3e-4)
     gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
