@@ -2,6 +2,14 @@ from .base_llm import BaseLLM
 from .data import Dataset, benchmark
 
 
+class SFTModel(BaseLLM):
+    def format_prompt(self, question: str) -> str:
+        return (
+            "Answer with the exact format <answer>number</answer>.\n"
+            f"Question: {question}"
+        )
+
+
 def load() -> BaseLLM:
     from pathlib import Path
 
@@ -10,7 +18,7 @@ def load() -> BaseLLM:
     model_name = "sft_model"
     model_path = str(Path(__file__).parent / model_name)
 
-    llm = BaseLLM()
+    llm = SFTModel()
     llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
     llm.model.eval()
 
@@ -92,7 +100,7 @@ def train_model(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    llm = BaseLLM()
+    llm = SFTModel()
     llm.model.train()
     llm.model.enable_input_require_grads()
 
@@ -143,7 +151,7 @@ def train_model(
 
 def test_model(ckpt_path: str):
     testset = Dataset("valid")
-    llm = BaseLLM()
+    llm = SFTModel()
 
     # Load the model with LoRA adapters
     from peft import PeftModel
