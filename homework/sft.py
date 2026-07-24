@@ -1,5 +1,39 @@
+import re
+
 from .base_llm import BaseLLM
 from .data import Dataset, benchmark
+
+# Took help of Github Copilot
+QUANTITY_RE = re.compile(r"(?<![*^\d.])\b(\d+(?:\.\d+)?)\b")
+
+
+def augment_dataset(data, values=range(1, 11), samples_per_combo: int = 4, seed: int = 0):
+
+    import random
+    from collections import defaultdict
+
+    by_factor = defaultdict(list)
+    passthrough = []
+    for question, answer in data:
+        match = QUANTITY_RE.search(question)
+        quantity = float(match.group(1)) if match else 0.0
+        if not quantity:
+            passthrough.append([question, answer])
+            continue
+        by_factor[round(answer / quantity, 9)].append((question, match.span(1)))
+
+    rng = random.Random(seed)
+    augmented = {}
+    for factor, templates in by_factor.items():
+        for value in values:
+            for question, (start, end) in rng.sample(templates, min(samples_per_combo, len(templates))):
+                variant = f"{question[:start]}{value:g}{question[end:]}"
+                augmented[variant] = factor * value
+
+    for question, answer in data:  
+        augmented[question] = answer
+
+    return passthrough + [[q, a] for q, a in augmented.items()]
 
 
 def load() -> BaseLLM:
@@ -45,14 +79,16 @@ def tokenize(tokenizer, question: str, answer: str, max_length: int = 128):
     return full
 
 
-def format_number(value: float) -> str:
-    """
-    Render a float with as few tokens as possible while staying well inside the 5% grading
-    tolerance. Three decimals is lossless for every answer in this dataset (smallest is 0.125),
-    and dropping the trailing ".0" saves two tokens on the majority of examples.
-    """
-    text = f"{round(float(value), 3):f}".rstrip("0").rstrip(".")
-    return text if text not in ("", "-") else "0"
+def format_number(value: float, significant_digits: int = 3) -> str:
+    import math
+
+    value = float(value)
+    if value == 0:
+        return "0"
+    decimals = significant_digits - 1 - math.floor(math.log10(abs(value)))
+    rounded = round(value, decimals)
+    text = f"{rounded:.{max(decimals, 0)}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def format_example(prompt: str, answer: str, reasoning: str | None = None) -> dict[str, str]:
@@ -121,13 +157,18 @@ def train_model(
     llm.model.print_trainable_parameters()
 
     dataset = Dataset(dataset_name)
+    samples_per_combo = kwargs.pop("samples_per_combo", 3)
+    if kwargs.pop("augment", dataset_name == "train"):
+        dataset.data = augment_dataset(dataset.data, samples_per_combo=samples_per_combo)
+        print(f"[sft] augmented training set: {len(dataset.data)} examples")
+
     # Plain <answer>...</answer> targets are ~25 tokens; RFT reasoning targets need the full budget.
     max_length = kwargs.pop("max_length", 128 if dataset_name != "train" else 64)
     train_dataset = TokenizedDataset(llm.tokenizer, dataset, format_example, max_length=max_length)
 
-    num_train_epochs = kwargs.pop("num_train_epochs", 5)
+    num_train_epochs = kwargs.pop("num_train_epochs", 8)
     per_device_train_batch_size = kwargs.pop("per_device_train_batch_size", 32)
-    learning_rate = kwargs.pop("learning_rate", 2e-4)
+    learning_rate = kwargs.pop("learning_rate", 3e-4)
     gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
 
     training_args = TrainingArguments(

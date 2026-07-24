@@ -5,6 +5,7 @@ from typing import overload
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+# Took help of Github Copilot
 
 def _resolve_checkpoint() -> str:
     env_checkpoint = os.environ.get("SMOLLM2_CHECKPOINT")
@@ -47,8 +48,6 @@ class BaseLLM:
             ).to(device)
 
         self.device = device
-        # Generation budget. Plain <answer> completions need very few tokens; chain-of-thought
-        # answers (CoT / RFT) need room to finish the reasoning before the </answer> tag.
         self.max_new_tokens = 50
 
     def format_prompt(self, question: str) -> str:
@@ -129,9 +128,6 @@ class BaseLLM:
         """
         from tqdm import tqdm  # Importing tqdm for progress bar
 
-        # Preventing OOM
-        # Depending on your GPU batched generation will use a lot of memory.
-        # If you run out of memory, try to reduce the micro_batch_size.
         micro_batch_size = max(1, 32 // max(1, num_return_sequences or 1))
         if len(prompts) > micro_batch_size:
             return [
